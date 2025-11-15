@@ -1,309 +1,450 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Background Changer</title>
-    <!-- Load Tailwind CSS for modern styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary': '#4f46e5',
-                        'secondary': '#60a5fa',
-                        'accent': '#facc15',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
+import React, { useState, useEffect, useCallback } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { Loader2, Upload, Shirt, Image, Edit, PlusCircle, CheckCircle, Diamond } from 'lucide-react';
+
+// --- Configuration ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Reference the uploaded image for initial display (User must still upload file for API call)
+const DEFAULT_IMAGE_URL = 'uploaded:image.png-7fa2a45e-948d-480e-a100-bb4e9d51a4e5';
+
+// Define the available clothing and accessory options, highly stylized for the NFT aesthetic
+const CLOTHING_OPTIONS = [
+    {
+        category: 'Hats & Crowns',
+        key: 'headwear',
+        items: [
+            { id: 'h1', name: 'Gold Crown (Base)', prompt: 'a massive, heavy gold crown with blue gems, maintaining the current style' },
+            { id: 'h2', name: 'Futuristic Helmet', prompt: 'a sleek, dark red and black futuristic motorcycle helmet with a visor' },
+            { id: 'h3', name: 'Black Beanie', prompt: 'a simple, high-contrast, black knit beanie hat' },
+            { id: 'h4', name: 'Spiked Mohawk', prompt: 'a vibrant red spiked mohawk hairstyle, matching the illustration style' },
+            { id: 'h5', name: 'Chrome Samurai', prompt: 'a detailed chrome and black cyberpunk samurai helmet' },
+            { id: 'h6', name: 'Neon Halo', prompt: 'a glowing cyan circular halo above the head' },
+            { id: 'h7', name: 'Visor Cap', prompt: 'a black baseball cap with an integrated green LED strip visor' },
+            { id: 'h8', name: 'Dark Jester Hat', prompt: 'a stylized, high-contrast black and purple jester hat' },
+            // --- NEW XMAS/FUNNY ---
+            { id: 'h9', name: 'Neon Santa Hat', prompt: 'a high-contrast, black and neon green Santa hat, maintaining the cyberpunk style' },
+            { id: 'h10', name: 'Jingling Antlers', prompt: 'chrome reindeer antlers with glowing red bells attached' },
+        ],
+    },
+    {
+        category: 'Glasses',
+        key: 'glasses',
+        items: [
+            { id: 'g1', name: 'Laser Visor', prompt: 'a glowing cyan single-strip laser visor covering the eyes' },
+            { id: 'g2', name: 'Gold-Rim Shades', prompt: 'dark, gold-rimmed round sunglasses in the cartoon style' },
+            { id: 'g3', name: 'Holographic Goggles', prompt: 'a set of large, reflective, orange holographic goggles resting on the forehead' },
+            { id: 'g4', name: 'No Glasses', prompt: 'no glasses or visor, remove any existing eyewear' },
+            { id: 'g5', name: 'X-Ray Goggles', prompt: 'large, blocky goggles with a glowing green lens effect' },
+            { id: 'g6', name: 'Gold Monocle', prompt: 'a stylized gold monocle integrated with a facial tech piece' },
+            { id: 'g7', name: 'Half-Frame Shades', prompt: 'angular, reflective red half-frame sunglasses' },
+            // --- NEW FUNNY ---
+            { id: 'g8', name: 'Giant Googly Eyes', prompt: 'oversized, cartoonishly large googly eye glasses' },
+        ],
+    },
+    {
+        category: 'Jackets & Jumpers',
+        key: 'jacket',
+        items: [
+            { id: 'j1', name: 'Spiked Leather (Base)', prompt: 'a black leather motorcycle jacket covered in chrome spikes' },
+            { id: 'j2', name: 'Neon Bomber', prompt: 'a vivid pink and cyan striped futuristic bomber jacket' },
+            { id: 'j3', name: 'Heavy Gold Armor', prompt: 'a solid, heavy, gold-plated, futuristic shoulder armor piece' },
+            { id: 'j4', name: 'Black Roll-Neck Jumper', prompt: 'a heavy black roll-neck or turtleneck sweater' },
+            { id: 'j5', name: 'Luxury Fur Coat', prompt: 'a massive, expensive white fur coat draped over the shoulders' },
+            { id: 'j6', name: 'Digital Camo Parka', prompt: 'a bulky, stylized digital camouflage parka with large pockets' },
+            { id: 'j7', name: 'Sleek Black Trench', prompt: 'a long, flowing, high-contrast black leather trench coat' },
+            { id: 'j8', name: 'Metallic Track Suit', prompt: 'a metallic silver futuristic track suit jacket' },
+            { id: 'j9', name: 'Vibrant Basketball Jersey', prompt: 'an oversized, vivid yellow and black basketball jersey' },
+            // --- NEW XMAS/FUNNY ---
+            { id: 'j10', name: 'Ugly Xmas Cyber-Sweater', prompt: 'a high-contrast, black and bright green Ugly Christmas Sweater featuring a pixelated skull pattern' },
+        ],
+    },
+    {
+        category: 'T-Shirts & LeGods',
+        key: 'top',
+        items: [
+            { id: 't1', name: 'Cyberpunk Vest', prompt: 'a tight, shiny, black futuristic tank top or vest' },
+            { id: 't2', name: 'Vintage Band Tee', prompt: 'a ripped vintage band t-shirt with a faded logo' },
+            { id: 't3', name: 'Clean White T-Shirt', prompt: 'a clean, high-contrast white t-shirt' },
+            { id: 't4', name: 'Black Sleeveless Hoodie', prompt: 'a simple, dark, sleeveless athletic hoodie' },
+            { id: 't5', name: 'Net Tank Top', prompt: 'a provocative black mesh/net tank top' },
+            { id: 't6', name: 'Tattooed Chest', prompt: 'the chest and arms are covered in intricate, stylized graphic tattoos' },
+            { id: 't7', name: 'Logo Hoodie', prompt: 'a simple, dark hoodie with a large, minimalist white logo on the chest' },
+            { id: 't8', name: 'Shoulder Armor Plate', prompt: 'a high-tech, black and red chest armor plating piece' },
+            // --- NEW XMAS ---
+            { id: 't9', name: 'Santa Vest & Abs', prompt: 'a graphic, cartoonishly muscular chest wearing a ripped red Santa Claus vest' },
+        ],
+    },
+    {
+        category: 'Chains & Neckwear',
+        key: 'chain',
+        items: [
+            { id: 'c1', name: 'Thick Silver (Base)', prompt: 'a very thick, heavy chrome silver chain necklace' },
+            { id: 'c2', name: 'Diamond Pendant', prompt: 'a large, glowing diamond pendant on a thin silver chain' },
+            { id: 'c3', name: 'Heavy Gold Chain', prompt: 'an extremely thick, cuban link gold chain necklace' },
+            { id: 'c4', name: 'No Chain', prompt: 'no necklace or chain' },
+            { id: 'c5', name: 'Padlock Chain', prompt: 'a chunky silver chain with a prominent industrial padlock hanging from it' },
+            { id: 'c6', name: 'Chrome Dog Tag', prompt: 'a polished chrome military-style dog tag necklace' },
+            { id: 'c7', name: 'Silk Scarf', prompt: 'a luxurious, patterned silk scarf draped loosely around the neck' },
+            // --- NEW XMAS/FUNNY ---
+            { id: 'c8', name: 'Tacky LED Lights', prompt: 'a necklace made of a string of cheap, glowing, multicolored Christmas LED lights' },
+        ],
+    },
+    {
+        category: 'Facial Traits',
+        key: 'face_trait',
+        items: [
+            { id: 'f1', name: 'Cybernetic Scars', prompt: 'vivid blue glowing lines resembling scars on the cheek/forehead' },
+            { id: 'f2', name: 'Pixelated Balaclava', prompt: 'a high-contrast black and white pixelated balaclava covering the lower face' },
+            { id: 'f3', name: 'No Face Trait', prompt: 'no facial accessory or marking' },
+            { id: 'f4', name: 'Bionic Jaw', prompt: 'a partial chrome jaw and lower face replacement' },
+            { id: 'f5', name: 'Glowing Red Eyes', prompt: 'the eyes are solid, glowing red color' },
+            { id: 'f6', name: 'Gas Mask', prompt: 'a futuristic black gas mask covering the lower half of the face' },
+            // --- NEW FUNNY ---
+            { id: 'f7', name: 'Rudolph Red Nose', prompt: 'a small, glowing red, cartoon-style Rudolph nose' },
+            { id: 'f8', name: 'Oversized Smile', prompt: 'an extremely large, white-toothed cartoon smile drawn across the face' },
+        ],
+    },
+    {
+        category: 'Background',
+        key: 'background',
+        items: [
+            { id: 'b1', name: 'Black (Base)', prompt: 'a simple solid black background' },
+            { id: 'b2', name: 'Neon City Street', prompt: 'a vivid neon cyberpunk city street background with rain effects' },
+            { id: 'b3', name: 'Geometric Abstract', prompt: 'a high-contrast, pink and blue geometric abstract pattern background' },
+            { id: 'b4', name: 'Volcanic Wasteland', prompt: 'a dark, smoky volcanic wasteland with red lightning in the sky' },
+            { id: 'b5', name: 'Data Stream Matrix', prompt: 'a background filled with green glowing data streams, like the matrix' },
+            { id: 'b6', name: 'Rainy Temple Ruins', prompt: 'ancient, dark temple ruins in a torrential downpour' },
+            { id: 'b7', name: 'Cosmic Nebula', prompt: 'a swirling, vibrant purple and blue cosmic nebula background' },
+            // --- NEW XMAS ---
+            { id: 'b8', name: 'Cyberpunk Snowscape', prompt: 'a hyper-stylized, high-contrast snowy cyberpunk street at night, with dark, wet pavement and neon signs' },
+            { id: 'b9', name: 'Candy Cane Matrix', prompt: 'an abstract, swirling background of high-contrast red and white candy cane stripes' },
+        ],
+    },
+];
+
+/**
+ * Utility function for exponential backoff retry logic.
+ */
+const withRetry = async (fn, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn();
+        } catch (error) {
+            if (i === maxRetries - 1) throw error;
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            // console.warn(`Retry attempt ${i + 1} failed. Retrying in ${delay / 1000}s...`);
+        }
+    }
+};
+
+const App = () => {
+    // --- State Management ---
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+
+    const [inputImageBase64, setInputImageBase64] = useState(null);
+    const [generatedImageUrl, setGeneratedImageUrl] = useState(null);
+    const [selectedItems, setSelectedItems] = useState({
+        headwear: CLOTHING_OPTIONS.find(c => c.key === 'headwear').items[0],
+        jacket: CLOTHING_OPTIONS.find(c => c.key === 'jacket').items[0],
+        chain: CLOTHING_OPTIONS.find(c => c.key === 'chain').items[0],
+        background: CLOTHING_OPTIONS.find(c => c.key === 'background').items[0],
+    });
+    const [loading, setLoading] = useState(false);
+    const [error, setError(null);
+
+    // --- Firebase Initialization and Auth ---
+    useEffect(() => {
+        try {
+            const app = initializeApp(firebaseConfig);
+            const firestoreDb = getFirestore(app);
+            const firebaseAuth = getAuth(app);
+
+            setDb(firestoreDb);
+            setAuth(firebaseAuth);
+
+            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                } else if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                    } catch (e) {
+                        console.error("Error signing in with custom token, falling back to anonymous:", e);
+                        await signInAnonymously(firebaseAuth);
+                    }
+                } else {
+                    await signInAnonymously(firebaseAuth);
                 }
+                setIsAuthReady(true);
+            });
+
+            return () => unsubscribe();
+
+        } catch (e) {
+            console.error("Failed to initialize Firebase:", e);
+            setError("Failed to initialize the application services.");
+        }
+    }, []);
+
+    // Handler for selecting/deselecting an item
+    const handleItemSelection = (categoryKey, item) => {
+        setGeneratedImageUrl(null); // Clear previous output on new selection
+        setSelectedItems(prev => {
+            if (prev[categoryKey] && prev[categoryKey].id === item.id) {
+                // Deselect if already selected
+                const newState = { ...prev };
+                delete newState[categoryKey];
+                return newState;
+            } else {
+                // Select new item in category
+                return {
+                    ...prev,
+                    [categoryKey]: item,
+                };
             }
+        });
+    };
+
+    // --- Image Upload Handling ---
+    const handleFileChange = (event) => {
+        setError(null);
+        setGeneratedImageUrl(null);
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = reader.result;
+                setInputImageBase64(dataUrl);
+            };
+            reader.readAsDataURL(file);
         }
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    };
+
+    // --- AI Generation Logic ---
+    const generateNewOutfit = useCallback(async () => {
         
-        /* Custom spinner animation */
-        .spinner {
-            border-top-color: #4f46e5;
-            -webkit-animation: spinner 1.5s linear infinite;
-            animation: spinner 1.5s linear infinite;
+        if (!inputImageBase64) {
+            setError("Error: Please upload the base image using the button below before generating.");
+            return;
         }
-        @-webkit-keyframes spinner {
-            0% { -webkit-transform: rotate(0deg); }
-            100% { -webkit-transform: rotate(360deg); }
+
+        const selectedDescriptions = Object.values(selectedItems)
+            .map(item => item.prompt)
+            .filter(Boolean);
+
+        if (selectedDescriptions.length === 0) {
+            setError("Please select at least one item of clothing/accessory.");
+            return;
         }
-        @keyframes spinner {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body class="bg-gray-50 min-h-screen flex flex-col items-center p-4 font-sans">
 
-    <!-- Header -->
-    <header class="w-full max-w-2xl text-center py-6">
-        <h1 class="text-3xl font-bold text-gray-800">AI Background Studio</h1>
-        <p class="text-gray-600 mt-1">Upload an image and describe the new scene!</p>
-    </header>
+        // Construct the final prompt, emphasizing the style match
+        const descriptionList = selectedDescriptions.join(' and ');
+        const finalPrompt = `Change the person in the image to have the following characteristics, ensuring the new items match the high-contrast, bold, graphic, and cyberpunk illustration style of the original NFT art: ${descriptionList}. Maintain the pose, facial expression, and general lighting.`;
 
-    <!-- Main Application Container -->
-    <main class="w-full max-w-2xl bg-white p-6 md:p-8 rounded-xl shadow-2xl space-y-6">
-
-        <!-- Upload Section -->
-        <div class="space-y-4">
-            <h2 class="text-xl font-semibold text-gray-700">1. Upload Image</h2>
-            <div id="image-upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition duration-300 cursor-pointer" onclick="document.getElementById('file-input').click()">
-                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 16m-2 2H6a2 2 0 01-2-2v-4.586a2 2 0 01.586-1.414l.828-.828a2 2 0 011.414-.586h.586a2 2 0 011.414.586l.828.828a2 2 0 01.586 1.414V16a2 2 0 01-2 2z" />
-                </svg>
-                <p class="mt-2 text-sm text-gray-600"><span class="font-medium text-primary">Click to upload</span> or drag and drop</p>
-                <p class="text-xs text-gray-500">PNG, JPG, up to 4MB</p>
-                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="previewImage(event)">
-            </div>
-            
-            <div id="image-preview" class="hidden relative">
-                <img id="uploaded-img" class="w-full h-auto object-cover rounded-lg shadow-md" alt="Uploaded Image Preview">
-                <button onclick="removeImage()" class="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-        </div>
-
-        <!-- Prompt Section -->
-        <div class="space-y-4">
-            <h2 class="text-xl font-semibold text-gray-700">2. Describe New Background</h2>
-            <textarea id="prompt-input" rows="3" placeholder="e.g., A cyberpunk cityscape at night, a serene Japanese garden in autumn, a spaceship cockpit." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition resize-none"></textarea>
-        </div>
+        setLoading(true);
+        setError(null);
         
-        <!-- Generate Button -->
-        <button id="generate-button" onclick="generateBackground()" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-lg text-lg font-medium text-white bg-primary hover:bg-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
-            <span id="button-text">Generate New Background</span>
-            <div id="loading-spinner" class="spinner h-5 w-5 border-4 border-t-white border-r-white border-b-primary border-l-white rounded-full ml-3 hidden"></div>
-        </button>
+        // 1. Extract raw base64 data and mime type from the data URL
+        const parts = inputImageBase64.match(/^data:(.+?);base64,(.+)$/);
+        if (!parts) {
+            setError("Invalid image file format.");
+            setLoading(false);
+            return;
+        }
 
-        <!-- Output Section -->
-        <div id="output-section" class="pt-6 border-t mt-6 border-gray-200 hidden">
-            <h2 class="text-xl font-semibold text-gray-700 mb-4">3. Result</h2>
-            <div id="message-box" class="hidden p-4 rounded-lg text-sm text-center" role="alert"></div>
-            <div id="image-result" class="bg-gray-100 p-4 rounded-lg shadow-inner flex justify-center items-center">
-                <img id="generated-img" class="w-full h-auto max-h-[500px] object-contain rounded-lg shadow-xl" alt="Generated Image" onerror="this.onerror=null; this.src='https://placehold.co/400x400/808080/FFFFFF?text=Error+Loading+Image'">
-            </div>
-        </div>
-
-    </main>
-
-    <script type="module">
-        // Global variables provided by the environment
-        const apiKey = "";
+        const mimeType = parts[1];
+        const base64Data = parts[2];
+        
+        const apiKey = ""; // Canvas environment will provide the key
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
 
-        // DOM Elements
-        const fileInput = document.getElementById('file-input');
-        const imagePreview = document.getElementById('image-preview');
-        const uploadedImg = document.getElementById('uploaded-img');
-        const promptInput = document.getElementById('prompt-input');
-        const generateButton = document.getElementById('generate-button');
-        const buttonText = document.getElementById('button-text');
-        const loadingSpinner = document.getElementById('loading-spinner');
-        const outputSection = document.getElementById('output-section');
-        const generatedImg = document.getElementById('generated-img');
-        const messageBox = document.getElementById('message-box');
-
-        let uploadedBase64Image = null;
-
-        // --- Utility Functions ---
-
-        /**
-         * Converts a File object to a Base64 string.
-         * @param {File} file - The image file to convert.
-         * @returns {Promise<string>} - The base64 data string (without the mime type prefix).
-         */
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => {
-                    // Extract the base64 part (remove "data:image/jpeg;base64,")
-                    const base64String = reader.result.split(',')[1];
-                    resolve(base64String);
-                };
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        /**
-         * Shows a transient message box.
-         * @param {string} message - The message text.
-         * @param {string} type - 'success' or 'error'.
-         */
-        function showMessage(message, type) {
-            messageBox.textContent = message;
-            messageBox.className = 'p-4 rounded-lg text-sm text-center';
-            if (type === 'error') {
-                messageBox.classList.add('bg-red-100', 'text-red-700', 'border', 'border-red-300');
-            } else {
-                messageBox.classList.add('bg-green-100', 'text-green-700', 'border', 'border-green-300');
-            }
-            messageBox.classList.remove('hidden');
-            setTimeout(() => {
-                messageBox.classList.add('hidden');
-            }, 5000);
-        }
-
-        /**
-         * Handles exponential backoff for API calls.
-         * @param {Function} fn - The function to retry.
-         * @param {number} maxRetries - Maximum number of retries.
-         * @param {number} delay - Initial delay in milliseconds.
-         * @returns {Promise<any>}
-         */
-        async function fetchWithRetry(fn, maxRetries = 5, delay = 1000) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fn();
-                    if (response.status === 429 && i < maxRetries - 1) {
-                        // Rate limit error (429) - wait and retry
-                        await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
-                        continue;
-                    }
-                    if (!response.ok) {
-                        const errorBody = await response.text();
-                        throw new Error(`API Request failed with status ${response.status}: ${errorBody}`);
-                    }
-                    return response;
-                } catch (error) {
-                    console.error(`Attempt ${i + 1} failed:`, error);
-                    if (i === maxRetries - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
-                }
-            }
-        }
-
-        // --- Core Application Logic ---
-
-        /**
-         * Previews the selected image and stores the Base64 data.
-         * @param {Event} event - The change event from the file input.
-         */
-        window.previewImage = async function(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            if (file.size > 4 * 1024 * 1024) { // Check file size (4MB limit)
-                showMessage("Image is too large. Max size is 4MB.", 'error');
-                fileInput.value = '';
-                return;
-            }
-
-            try {
-                // Show preview
-                uploadedImg.src = URL.createObjectURL(file);
-                imagePreview.classList.remove('hidden');
-                document.getElementById('image-upload-area').classList.add('hidden');
-                
-                // Convert to Base64 for the API call
-                uploadedBase64Image = await fileToBase64(file);
-            } catch (e) {
-                showMessage(`Could not read file: ${e.message}`, 'error');
-                removeImage();
-            }
-            updateButtonState();
-        }
-        
-        /**
-         * Clears the image preview and resets the input.
-         */
-        window.removeImage = function() {
-            uploadedImg.src = '';
-            uploadedBase64Image = null;
-            fileInput.value = '';
-            imagePreview.classList.add('hidden');
-            document.getElementById('image-upload-area').classList.remove('hidden');
-            generatedImg.src = '';
-            outputSection.classList.add('hidden');
-            updateButtonState();
-        }
-
-        /**
-         * Enables/disables the generate button based on input state.
-         */
-        function updateButtonState() {
-            const isReady = uploadedBase64Image && promptInput.value.trim().length > 0;
-            generateButton.disabled = !isReady;
-        }
-
-        promptInput.addEventListener('input', updateButtonState);
-        document.addEventListener('DOMContentLoaded', updateButtonState);
-
-
-        /**
-         * Calls the Gemini API to replace the background of the uploaded image.
-         */
-        window.generateBackground = async function() {
-            if (!uploadedBase64Image || generateButton.disabled) return;
-
-            const prompt = `Replace the background of the main subject in this image with: ${promptInput.value.trim()}. Maintain the original aspect ratio and the look of the foreground object.`;
-            
-            // UI State: Loading
-            generateButton.disabled = true;
-            buttonText.textContent = "Generating...";
-            loadingSpinner.classList.remove('hidden');
-            outputSection.classList.add('hidden');
-            generatedImg.src = '';
-
-
-            const payload = {
-                contents: [{
-                    parts: [{ 
-                        text: prompt 
-                    }, {
-                        inlineData: {
-                            mimeType: "image/jpeg", // Assuming common mime type, adjust if needed
-                            data: uploadedBase64Image
+        const payload = {
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        { text: finalPrompt },
+                        {
+                            inlineData: {
+                                mimeType: mimeType,
+                                data: base64Data
+                            }
                         }
-                    }]
-                }],
-                generationConfig: {
-                    responseModalities: ['IMAGE'] // Requesting only the image response
-                },
-            };
-            
-            try {
-                const response = await fetchWithRetry(() => fetch(apiUrl, {
+                    ]
+                }
+            ],
+        };
+        
+        try {
+            const fetchFn = async () => {
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                }));
-                
-                const result = await response.json();
-                const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+                });
 
-                if (!base64Data) {
-                    const errorMessage = result.error?.message || "Generation failed: The model did not return an image. Try a different prompt or image.";
-                    showMessage(errorMessage, 'error');
-                    console.error("API Response Error:", result);
-                    return;
+                if (!response.ok) {
+                    throw new Error(`API call failed with status: ${response.status}`);
                 }
 
-                const imageUrl = `data:image/png;base64,${base64Data}`;
-                generatedImg.src = imageUrl;
-                outputSection.classList.remove('hidden');
-                showMessage("Success! New background generated.", 'success');
+                return await response.json();
+            };
 
-            } catch (error) {
-                console.error("Fetch or API Error:", error);
-                showMessage(`An error occurred: ${error.message}`, 'error');
-            } finally {
-                // UI State: Done
-                loadingSpinner.classList.add('hidden');
-                buttonText.textContent = "Generate New Background";
-                updateButtonState(); // Re-enable if inputs are valid
+            const result = await withRetry(fetchFn);
+            
+            const base64Image = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+            if (base64Image) {
+                // Format the output as a data URL for display
+                setGeneratedImageUrl(`data:image/png;base64,${base64Image}`);
+            } else {
+                setError("AI did not return an image. Please try a different combination.");
             }
+        } catch (e) {
+            console.error("Image generation error:", e);
+            setError(`Failed to generate image: ${e.message || 'Check console for details.'}`);
+        } finally {
+            setLoading(false);
         }
-    </script>
-</body>
-</html>
+    }, [inputImageBase64, selectedItems]);
+
+    // --- Component UI ---
+
+    const displayImage = generatedImageUrl || (inputImageBase64 ? inputImageBase64 : DEFAULT_IMAGE_URL);
+    const isImageUploaded = !!inputImageBase64;
+    const isEditing = generatedImageUrl && !loading;
+    const generateButtonEnabled = isImageUploaded && !loading;
+
+    return (
+        <div className="min-h-screen bg-gray-900 p-4 sm:p-6 font-inter antialiased text-white">
+            {/* Header */}
+            <header className="mb-8 text-center">
+                <h1 className="text-3xl font-extrabold text-yellow-400 flex items-center justify-center space-x-3">
+                    <Diamond className="h-8 w-8 text-yellow-500" />
+                    <span>LeGods Style Generator</span>
+                </h1>
+                <p className="text-gray-400 mt-1 text-sm sm:text-base">
+                    Mix and match accessories and clothing to customize your NFT avatar.
+                </p>
+                <p className="text-xs text-gray-600 mt-2">
+                    Current App ID: **{appId}** | User ID: **{userId || '...'}**
+                </p>
+            </header>
+
+            <div className="max-w-6xl mx-auto bg-gray-800 p-6 rounded-2xl shadow-2xl">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    
+                    {/* Controls Area (Categories) */}
+                    <div className="flex flex-col space-y-6 lg:order-1">
+                        <h2 className="text-xl font-semibold text-yellow-400 flex items-center">
+                            <Edit className="h-5 w-5 mr-2" />
+                            1. Select Your Traits
+                        </h2>
+
+                        {CLOTHING_OPTIONS.map((category) => (
+                            <div key={category.key} className="p-4 bg-gray-700 rounded-xl shadow-inner border border-gray-600">
+                                <h3 className="text-lg font-bold text-gray-200 mb-3">{category.category}</h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {category.items.map((item) => {
+                                        const isSelected = selectedItems[category.key]?.id === item.id;
+                                        return (
+                                            <button
+                                                key={item.id}
+                                                onClick={() => handleItemSelection(category.key, item)}
+                                                disabled={loading}
+                                                className={`flex items-center justify-center p-3 text-sm rounded-lg border-2 transition duration-150 transform active:scale-95 text-left font-medium 
+                                                    ${isSelected 
+                                                        ? 'bg-yellow-500 text-gray-900 border-yellow-700 shadow-lg' 
+                                                        : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+                                                    }
+                                                `}
+                                            >
+                                                {isSelected ? <CheckCircle className="h-4 w-4 mr-2" /> : <PlusCircle className="h-4 w-4 mr-2 opacity-60" />}
+                                                {item.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Image Area and Action */}
+                    <div className="flex flex-col items-center lg:order-2">
+                        <h2 className="text-xl font-semibold text-yellow-400 mb-4 flex items-center">
+                            <Image className="h-5 w-5 mr-2" />
+                            {isEditing ? 'Edited Art' : 'Image Preview'}
+                        </h2>
+                        <div className="w-full max-w-sm sm:max-w-md aspect-[4/5] relative bg-black rounded-xl overflow-hidden shadow-2xl border-4 border-yellow-500">
+                            {loading && (
+                                <div className="absolute inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-10">
+                                    <Loader2 className="h-10 w-10 text-yellow-400 animate-spin" />
+                                    <p className="text-yellow-400 mt-3 font-medium">Forging New Trait...</p>
+                                </div>
+                            )}
+                            <img 
+                                src={displayImage}
+                                alt="LeGods Style Editor Preview"
+                                className="w-full h-full object-contain transition-opacity duration-300"
+                                onError={(e) => { 
+                                    // If the CDN path fails, fall back to simple black background
+                                    e.target.onerror = null; 
+                                    e.target.src = 'https://placehold.co/400x500/000000/ffffff?text=Upload+Base+Image';
+                                }}
+                            />
+                        </div>
+                        
+                        <div className="mt-6 w-full max-w-sm sm:max-w-md space-y-4">
+                            <label className={`w-full flex items-center justify-center px-4 py-3 text-gray-900 rounded-full cursor-pointer transition duration-200 shadow-md ${isImageUploaded ? 'bg-green-400 hover:bg-green-500' : 'bg-red-400 hover:bg-red-500'}`}>
+                                <Upload className="h-5 w-5 mr-2" />
+                                {isImageUploaded ? 'Image Uploaded' : '2. Upload Base Image (Required)'}
+                                <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    onChange={handleFileChange} 
+                                    className="hidden" 
+                                    disabled={loading}
+                                />
+                            </label>
+
+                            <button
+                                onClick={generateNewOutfit}
+                                disabled={!generateButtonEnabled}
+                                className={`w-full flex items-center justify-center px-6 py-4 text-white font-bold text-lg rounded-full transition duration-300 shadow-xl transform active:scale-98 
+                                    ${generateButtonEnabled ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-600 cursor-not-allowed'}
+                                `}
+                            >
+                                <Shirt className="h-6 w-6 mr-3" />
+                                3. Generate {isEditing ? 'New Edit' : 'New Trait'}
+                            </button>
+                        </div>
+                        
+                        {error && (
+                            <div className="mt-4 bg-red-800 border border-red-400 text-red-100 px-4 py-3 rounded-xl relative text-sm w-full max-w-sm sm:max-w-md" role="alert">
+                                <strong className="font-bold">Error:</strong>
+                                <span className="block sm:inline ml-1">{error}</span>
+                            </div>
+                        )}
+                        {!isImageUploaded && (
+                            <p className="text-center text-sm text-yellow-300 mt-3 p-2 border border-dashed border-yellow-600 rounded-lg w-full max-w-sm sm:max-w-md">
+                                **ACTION REQUIRED:** You must upload the base `image.png` file to enable the generation button.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default App;
 
