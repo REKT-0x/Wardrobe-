@@ -5,12 +5,13 @@ import { getFirestore } from 'firebase/firestore';
 import { Loader2, Upload, Shirt, Image, Edit, PlusCircle, CheckCircle, Diamond } from 'lucide-react';
 
 // --- Configuration ---
+// Safely access global variables provided by the Canvas environment
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// Reference the uploaded image for initial display (User must still upload file for API call)
-const DEFAULT_IMAGE_URL = 'uploaded:image.png-7fa2a45e-948d-480e-a100-bb4e9d51a4e5';
+// Placeholder for initial display (will be overwritten by user upload)
+const DEFAULT_IMAGE_URL = 'https://placehold.co/400x500/1e293b/94a3b8?text=Upload+Your+NFT+Base';
 
 // Define the available clothing and accessory options, highly stylized for the NFT aesthetic
 const CLOTHING_OPTIONS = [
@@ -18,111 +19,144 @@ const CLOTHING_OPTIONS = [
         category: 'Hats & Crowns',
         key: 'headwear',
         items: [
-            { id: 'h1', name: 'Gold Crown (Base)', prompt: 'a massive, heavy gold crown with blue gems, maintaining the current style' },
-            { id: 'h2', name: 'Futuristic Helmet', prompt: 'a sleek, dark red and black futuristic motorcycle helmet with a visor' },
-            { id: 'h3', name: 'Black Beanie', prompt: 'a simple, high-contrast, black knit beanie hat' },
-            { id: 'h4', name: 'Spiked Mohawk', prompt: 'a vibrant red spiked mohawk hairstyle, matching the illustration style' },
-            { id: 'h5', name: 'Chrome Samurai', prompt: 'a detailed chrome and black cyberpunk samurai helmet' },
-            { id: 'h6', name: 'Neon Halo', prompt: 'a glowing cyan circular halo above the head' },
-            { id: 'h7', name: 'Visor Cap', prompt: 'a black baseball cap with an integrated green LED strip visor' },
-            { id: 'h8', name: 'Dark Jester Hat', prompt: 'a stylized, high-contrast black and purple jester hat' },
-            // --- NEW XMAS/FUNNY ---
-            { id: 'h9', name: 'Neon Santa Hat', prompt: 'a high-contrast, black and neon green Santa hat, maintaining the cyberpunk style' },
-            { id: 'h10', name: 'Jingling Antlers', prompt: 'chrome reindeer antlers with glowing red bells attached' },
+            // Option to keep the original trait from the image (empty prompt, AI preserves existing)
+            { id: 'h0', name: 'Keep Original', prompt: '' }, 
+            // Option to explicitly remove the trait (sends removal prompt)
+            { id: 'h0-remove', name: 'Remove/Clear', prompt: 'remove any headwear or accessory from the head' },
+            { id: 'h1', name: 'Gold Crown (Logo)', prompt: 'a massive, heavy gold crown with blue gems and the **LeGods logo** prominently featured on the crown, maintaining the current style' },
+            { id: 'h2', name: 'Futuristic Helmet (Logo)', prompt: 'a sleek, dark red and black futuristic motorcycle helmet with a visor and the **LeGods logo** prominently featured on the helmet' },
+            { id: 'h3', name: 'Black Beanie (Logo)', prompt: 'a simple, high-contrast, black knit beanie hat with the **LeGods logo** prominently featured on the hat' },
+            { id: 'h4', name: 'Spiked Mohawk', prompt: 'a vibrant red spiked mohawk hairstyle, matching the illustration style' }, // Skip logo for hair
+            { id: 'h5', name: 'Chrome Samurai (Logo)', prompt: 'a detailed chrome and black cyberpunk samurai helmet with the **LeGods logo** prominently featured on the helmet' },
+            { id: 'h6', name: 'Neon Halo', prompt: 'a glowing cyan circular halo above the head' }, // Skip logo for halo
+            { id: 'h7', name: 'Visor Cap (Logo)', prompt: 'a black baseball cap with an integrated green LED strip visor and the **LeGods logo** prominently featured on the cap' },
+            { id: 'h8', name: 'Dark Jester Hat (Logo)', prompt: 'a stylized, high-contrast black and purple jester hat with the **LeGods logo** prominently featured on the hat' },
+            // --- XMAS/FUNNY ---
+            { id: 'h9', name: 'Neon Santa Hat (Logo)', prompt: 'a high-contrast, black and neon green Santa hat with the **LeGods logo** prominently featured on the hat, maintaining the cyberpunk style' },
+            { id: 'h10', name: 'Jingling Antlers', prompt: 'chrome reindeer antlers with glowing red bells attached' }, // Skip logo for antlers
+            { id: 'h11', name: 'Party Popper Headband', prompt: 'a large, tacky headband with miniature party poppers exploding above the head' }, // Skip logo for this item
+            { id: 'h12', name: 'Festive Gold Wreath (Logo)', prompt: 'a massive, heavy gold wreath crown with bright red and green neon berries and lights and the **LeGods logo** prominently featured on the crown' },
         ],
     },
     {
         category: 'Glasses',
         key: 'glasses',
         items: [
-            { id: 'g1', name: 'Laser Visor', prompt: 'a glowing cyan single-strip laser visor covering the eyes' },
-            { id: 'g2', name: 'Gold-Rim Shades', prompt: 'dark, gold-rimmed round sunglasses in the cartoon style' },
-            { id: 'g3', name: 'Holographic Goggles', prompt: 'a set of large, reflective, orange holographic goggles resting on the forehead' },
-            { id: 'g4', name: 'No Glasses', prompt: 'no glasses or visor, remove any existing eyewear' },
-            { id: 'g5', name: 'X-Ray Goggles', prompt: 'large, blocky goggles with a glowing green lens effect' },
-            { id: 'g6', name: 'Gold Monocle', prompt: 'a stylized gold monocle integrated with a facial tech piece' },
-            { id: 'g7', name: 'Half-Frame Shades', prompt: 'angular, reflective red half-frame sunglasses' },
-            // --- NEW FUNNY ---
-            { id: 'g8', name: 'Giant Googly Eyes', prompt: 'oversized, cartoonishly large googly eye glasses' },
+            { id: 'g4', name: 'Keep Original', prompt: '' }, 
+            { id: 'g4-remove', name: 'Remove/Clear', prompt: 'remove any glasses, shades, or visor from the face' },
+            { id: 'g1', name: 'Laser Visor', prompt: 'a glowing cyan single-strip laser visor covering the eyes' }, // Skip logo for simple glasses
+            { id: 'g2', name: 'Gold-Rim Shades', prompt: 'dark, gold-rimmed round sunglasses in the cartoon style' }, // Skip logo for simple glasses
+            { id: 'g3', name: 'Holographic Goggles (Logo)', prompt: 'a set of large, reflective, orange holographic goggles resting on the forehead with the **LeGods logo** prominently featured on the goggles frame' },
+            { id: 'g5', name: 'X-Ray Goggles (Logo)', prompt: 'large, blocky goggles with a glowing green lens effect and the **LeGods logo** prominently featured on the goggles frame' },
+            { id: 'g6', name: 'Gold Monocle', prompt: 'a stylized gold monocle integrated with a facial tech piece' }, // Skip logo for monocle
+            { id: 'g7', name: 'Half-Frame Shades', prompt: 'angular, reflective red half-frame sunglasses' }, // Skip logo for simple glasses
+            // --- XMAS/FUNNY ---
+            { id: 'g8', name: 'Giant Googly Eyes', prompt: 'oversized, cartoonishly large googly eye glasses' }, // Skip logo for funny item
+            { id: 'g9', name: 'Flashing LED Shades', prompt: 'large, novelty star-shaped shades with flashing red and green LED lights' }, // Skip logo for simple glasses
+            { id: 'g10', name: 'Snowflake Goggles (Logo)', prompt: 'sleek, chrome cyberpunk goggles with large, sharp, glowing blue snowflake lenses and the **LeGods logo** prominently featured on the goggles frame' },
         ],
     },
     {
         category: 'Jackets & Jumpers',
         key: 'jacket',
         items: [
-            { id: 'j1', name: 'Spiked Leather (Base)', prompt: 'a black leather motorcycle jacket covered in chrome spikes' },
-            { id: 'j2', name: 'Neon Bomber', prompt: 'a vivid pink and cyan striped futuristic bomber jacket' },
-            { id: 'j3', name: 'Heavy Gold Armor', prompt: 'a solid, heavy, gold-plated, futuristic shoulder armor piece' },
-            { id: 'j4', name: 'Black Roll-Neck Jumper', prompt: 'a heavy black roll-neck or turtleneck sweater' },
-            { id: 'j5', name: 'Luxury Fur Coat', prompt: 'a massive, expensive white fur coat draped over the shoulders' },
-            { id: 'j6', name: 'Digital Camo Parka', prompt: 'a bulky, stylized digital camouflage parka with large pockets' },
-            { id: 'j7', name: 'Sleek Black Trench', prompt: 'a long, flowing, high-contrast black leather trench coat' },
-            { id: 'j8', name: 'Metallic Track Suit', prompt: 'a metallic silver futuristic track suit jacket' },
-            { id: 'j9', name: 'Vibrant Basketball Jersey', prompt: 'an oversized, vivid yellow and black basketball jersey' },
-            // --- NEW XMAS/FUNNY ---
-            { id: 'j10', name: 'Ugly Xmas Cyber-Sweater', prompt: 'a high-contrast, black and bright green Ugly Christmas Sweater featuring a pixelated skull pattern' },
+            { id: 'j0', name: 'Keep Original', prompt: '' },
+            { id: 'j0-remove', name: 'Remove/Clear', prompt: 'remove any jacket, armor, or outer garment' },
+            { id: 'j1', name: 'Spiked Leather (Logo)', prompt: 'a black leather motorcycle jacket covered in chrome spikes and the **LeGods logo** prominently featured on the back or chest' },
+            { id: 'j2', name: 'Neon Bomber (Logo)', prompt: 'a vivid pink and cyan striped futuristic bomber jacket with the **LeGods logo** prominently featured on the back or chest' },
+            { id: 'j3', name: 'Heavy Gold Armor (Logo)', prompt: 'a solid, heavy, gold-plated, futuristic shoulder armor piece with the **LeGods logo** prominently featured on the shoulder plate' },
+            { id: 'j4', name: 'Black Roll-Neck (Logo)', prompt: 'a heavy black roll-neck or turtleneck sweater with the **LeGods logo** prominently featured on the neck or chest' },
+            { id: 'j5', name: 'Luxury Fur Coat', prompt: 'a massive, expensive white fur coat draped over the shoulders' }, // Skip logo for fur
+            { id: 'j6', name: 'Camo Parka (Logo)', prompt: 'a bulky, stylized digital camouflage parka with large pockets and the **LeGods logo** prominently featured on the chest' },
+            { id: 'j7', name: 'Sleek Trench (Logo)', prompt: 'a long, flowing, high-contrast black leather trench coat with the **LeGods logo** prominently featured on the back' },
+            { id: 'j8', name: 'Metallic Track Suit (Logo)', prompt: 'a metallic silver futuristic track suit jacket with the **LeGods logo** prominently featured on the chest' },
+            { id: 'j9', name: 'Basketball Jersey (Logo)', prompt: 'an oversized, vivid yellow and black basketball jersey with the **LeGods logo** prominently featured on the front' },
+            // --- XMAS/FUNNY ---
+            { id: 'j10', name: 'Ugly Xmas Cyber-Sweater (Logo)', prompt: 'a high-contrast, black and bright green Ugly Christmas Sweater featuring a pixelated skull pattern with the **LeGods logo** replacing or adjacent to the skull pattern' },
+            { id: 'j11', name: 'Giant Elf Costume (Logo)', prompt: 'an cartoonishly oversized green and red elf costume jacket with exaggerated collar and the **LeGods logo** prominently featured on the chest' },
+            { id: 'j12', name: 'Reflective Tinsel Cape', prompt: 'a flowing cape made entirely of sharp, highly reflective silver and red tinsel material' }, // Skip logo for tinsel
         ],
     },
     {
         category: 'T-Shirts & LeGods',
         key: 'top',
         items: [
-            { id: 't1', name: 'Cyberpunk Vest', prompt: 'a tight, shiny, black futuristic tank top or vest' },
-            { id: 't2', name: 'Vintage Band Tee', prompt: 'a ripped vintage band t-shirt with a faded logo' },
-            { id: 't3', name: 'Clean White T-Shirt', prompt: 'a clean, high-contrast white t-shirt' },
-            { id: 't4', name: 'Black Sleeveless Hoodie', prompt: 'a simple, dark, sleeveless athletic hoodie' },
-            { id: 't5', name: 'Net Tank Top', prompt: 'a provocative black mesh/net tank top' },
-            { id: 't6', name: 'Tattooed Chest', prompt: 'the chest and arms are covered in intricate, stylized graphic tattoos' },
-            { id: 't7', name: 'Logo Hoodie', prompt: 'a simple, dark hoodie with a large, minimalist white logo on the chest' },
-            { id: 't8', name: 'Shoulder Armor Plate', prompt: 'a high-tech, black and red chest armor plating piece' },
-            // --- NEW XMAS ---
-            { id: 't9', name: 'Santa Vest & Abs', prompt: 'a graphic, cartoonishly muscular chest wearing a ripped red Santa Claus vest' },
+            { id: 't0', name: 'Keep Original', prompt: '' },
+            { id: 't0-remove', name: 'Remove/Clear', prompt: 'remove any t-shirt, top, or inner garment' },
+            { id: 't1', name: 'Cyber Vest (Logo)', prompt: 'a tight, shiny, black futuristic tank top or vest with the **LeGods logo** prominently featured on the chest' },
+            { id: 't2', name: 'Vintage Band Tee (Logo)', prompt: 'a ripped vintage band t-shirt with a faded logo. Replace the faded logo with the **LeGods logo**' },
+            { id: 't3', name: 'Clean White T-Shirt (Logo)', prompt: 'a clean, high-contrast white t-shirt with the **LeGods logo** prominently featured on the chest' },
+            { id: 't4', name: 'Black Sleeveless Hoodie (Logo)', prompt: 'a simple, dark, sleeveless athletic hoodie with the **LeGods logo** prominently featured on the chest' },
+            { id: 't5', name: 'Net Tank Top (Logo)', prompt: 'a provocative black mesh/net tank top with the **LeGods logo** rendered in metallic silver on the chest' },
+            { id: 't6', name: 'Tattooed Chest (Logo)', prompt: 'the chest and arms are covered in intricate, stylized graphic tattoos, including a prominent **LeGods logo tattoo** on the chest' },
+            { id: 't7', name: 'Logo Hoodie (LeGods)', prompt: 'a simple, dark hoodie with a large, minimalist white **LeGods logo** on the chest' },
+            { id: 't8', name: 'Shoulder Armor Plate (Logo)', prompt: 'a high-tech, black and red chest armor plating piece with the **LeGods logo** etched into the armor' },
+            // --- XMAS/FUNNY ---
+            { id: 't9', name: 'Santa Vest & Abs (Logo)', prompt: 'a graphic, cartoonishly muscular chest wearing a ripped red Santa Claus vest with the **LeGods logo** on the vest' },
+            { id: 't10', name: 'Festive Turtleneck (Logo Pattern)', prompt: 'a tightly fitted, high-contrast, black turtleneck featuring a repeating white **LeGods logo pattern**' },
+            { id: 't11', name: 'Black Ice T-Shirt (Logo)', prompt: 'a tight black shirt with a massive, stylized white skull made of cracked ice on the chest. Replace the skull with the **LeGods logo** made of cracked ice' },
         ],
     },
     {
         category: 'Chains & Neckwear',
         key: 'chain',
         items: [
-            { id: 'c1', name: 'Thick Silver (Base)', prompt: 'a very thick, heavy chrome silver chain necklace' },
-            { id: 'c2', name: 'Diamond Pendant', prompt: 'a large, glowing diamond pendant on a thin silver chain' },
-            { id: 'c3', name: 'Heavy Gold Chain', prompt: 'an extremely thick, cuban link gold chain necklace' },
-            { id: 'c4', name: 'No Chain', prompt: 'no necklace or chain' },
-            { id: 'c5', name: 'Padlock Chain', prompt: 'a chunky silver chain with a prominent industrial padlock hanging from it' },
-            { id: 'c6', name: 'Chrome Dog Tag', prompt: 'a polished chrome military-style dog tag necklace' },
-            { id: 'c7', name: 'Silk Scarf', prompt: 'a luxurious, patterned silk scarf draped loosely around the neck' },
-            // --- NEW XMAS/FUNNY ---
-            { id: 'c8', name: 'Tacky LED Lights', prompt: 'a necklace made of a string of cheap, glowing, multicolored Christmas LED lights' },
+            { id: 'c4', name: 'Keep Original', prompt: '' },
+            { id: 'c4-remove', name: 'Remove/Clear', prompt: 'remove any chain or neckwear' },
+            { id: 'c1', name: 'Thick Silver (Logo)', prompt: 'a very thick, heavy chrome silver chain necklace with a small **LeGods logo pendant**' },
+            { id: 'c2', name: 'Diamond Pendant (Logo Shape)', prompt: 'a large, glowing diamond pendant on a thin silver chain. The pendant is shaped like the **LeGods logo**' },
+            { id: 'c3', name: 'Heavy Gold Chain (Logo)', prompt: 'an extremely thick, cuban link gold chain necklace with a small **LeGods logo pendant**' },
+            { id: 'c5', name: 'Padlock Chain (Logo)', prompt: 'a chunky silver chain with a prominent industrial padlock hanging from it. The padlock features the **LeGods logo**' },
+            { id: 'c6', 'name': 'Chrome Dog Tag (Logo)', prompt: 'a polished chrome military-style dog tag necklace. The dog tag displays the **LeGods logo**' },
+            { id: 'c7', name: 'Silk Scarf (Logo Pattern)', prompt: 'a luxurious, patterned silk scarf draped loosely around the neck. The pattern includes the **LeGods logo**' },
+            // --- XMAS/FUNNY ---
+            { id: 'c8', name: 'Tacky LED Lights (Logo)', prompt: 'a necklace made of a string of cheap, glowing, multicolored Christmas LED lights, which form the shape of the **LeGods logo**' },
+            { id: 'c9', name: 'Oversized Candy Cane (Logo)', prompt: 'an absurdly large chain made of reflective, twisting red and white candy canes, featuring a **LeGods logo pendant** made of candy cane material' },
+            { id: 'c10', name: 'Bell Choker (Logo)', prompt: 'a tight, black leather choker with small, heavy chrome jingle bells attached and a **LeGods logo charm**' },
         ],
     },
     {
         category: 'Facial Traits',
         key: 'face_trait',
         items: [
-            { id: 'f1', name: 'Cybernetic Scars', prompt: 'vivid blue glowing lines resembling scars on the cheek/forehead' },
-            { id: 'f2', name: 'Pixelated Balaclava', prompt: 'a high-contrast black and white pixelated balaclava covering the lower face' },
-            { id: 'f3', name: 'No Face Trait', prompt: 'no facial accessory or marking' },
-            { id: 'f4', name: 'Bionic Jaw', prompt: 'a partial chrome jaw and lower face replacement' },
-            { id: 'f5', name: 'Glowing Red Eyes', prompt: 'the eyes are solid, glowing red color' },
-            { id: 'f6', name: 'Gas Mask', prompt: 'a futuristic black gas mask covering the lower half of the face' },
-            // --- NEW FUNNY ---
-            { id: 'f7', name: 'Rudolph Red Nose', prompt: 'a small, glowing red, cartoon-style Rudolph nose' },
-            { id: 'f8', name: 'Oversized Smile', prompt: 'an extremely large, white-toothed cartoon smile drawn across the face' },
+            { id: 'f3', name: 'Keep Original', prompt: '' },
+            { id: 'f3-remove', name: 'Remove/Clear', prompt: 'remove any facial trait, mask, or marking' },
+            { id: 'f1', name: 'Cybernetic Scars (Logo)', prompt: 'vivid blue glowing lines resembling scars on the cheek/forehead that form the shape of the **LeGods logo**' },
+            { id: 'f2', name: 'Pixelated Balaclava (Logo)', prompt: 'a high-contrast black and white pixelated balaclava covering the lower face with the **LeGods logo** printed on it\'s surface' },
+            { id: 'f4', name: 'Bionic Jaw (Logo)', prompt: 'a partial chrome jaw and lower face replacement with the **LeGods logo** etched into the metal' },
+            { id: 'f5', name: 'Glowing Red Eyes', prompt: 'the eyes are solid, glowing red color' }, // Skip logo for eyes
+            { id: 'f6', name: 'Gas Mask (Logo)', prompt: 'a futuristic black gas mask covering the lower half of the face with the **LeGods logo** printed on the filter' },
+            // --- XMAS/FUNNY ---
+            { id: 'f7', name: 'Rudolph Red Nose', prompt: 'a small, glowing red, cartoon-style Rudolph nose' }, // Skip logo for nose
+            { id: 'f8', name: 'Oversized Smile', prompt: 'an extremely large, white-toothed cartoon smile drawn across the face' }, // Skip logo for smile
+            { id: 'f9', name: 'Icy Beard', prompt: 'a highly stylized, frosted white beard made of sharp, crystalline ice' }, // Skip logo for beard
+            { id: 'f10', name: 'Cracked Gingerbread Mask (Logo)', prompt: 'a broken, cracked gingerbread cookie mask covering the mouth and nose with the **LeGods logo** etched into the cookie' },
         ],
     },
     {
         category: 'Background',
         key: 'background',
+        // Background does not need Keep/Remove, it is always a change or a solid color
         items: [
-            { id: 'b1', name: 'Black (Base)', prompt: 'a simple solid black background' },
+            // --- BASE COLORS ---
+            { id: 'bb1', name: 'Solid Black (Base)', prompt: 'a simple solid black background' },
+            { id: 'bb2', name: 'Solid Red', prompt: 'a simple solid vibrant red background' },
+            { id: 'bb3', name: 'Solid Blue', prompt: 'a simple solid neon blue background' },
+            { id: 'bb4', name: 'Solid Green', prompt: 'a simple solid high-contrast lime green background' },
+            { id: 'bb5', name: 'Solid Yellow', prompt: 'a simple solid bright yellow background' },
+            { id: 'bb6', name: 'Solid White', prompt: 'a simple solid high-contrast white background' },
+            // --- THEMATIC BACKGROUNDS ---
             { id: 'b2', name: 'Neon City Street', prompt: 'a vivid neon cyberpunk city street background with rain effects' },
             { id: 'b3', name: 'Geometric Abstract', prompt: 'a high-contrast, pink and blue geometric abstract pattern background' },
             { id: 'b4', name: 'Volcanic Wasteland', prompt: 'a dark, smoky volcanic wasteland with red lightning in the sky' },
             { id: 'b5', name: 'Data Stream Matrix', prompt: 'a background filled with green glowing data streams, like the matrix' },
             { id: 'b6', name: 'Rainy Temple Ruins', prompt: 'ancient, dark temple ruins in a torrential downpour' },
             { id: 'b7', name: 'Cosmic Nebula', prompt: 'a swirling, vibrant purple and blue cosmic nebula background' },
-            // --- NEW XMAS ---
+            // --- XMAS/FUNNY ---
             { id: 'b8', name: 'Cyberpunk Snowscape', prompt: 'a hyper-stylized, high-contrast snowy cyberpunk street at night, with dark, wet pavement and neon signs' },
             { id: 'b9', name: 'Candy Cane Matrix', prompt: 'an abstract, swirling background of high-contrast red and white candy cane stripes' },
+            { id: 'b10', name: 'Melted Gingerbread House', prompt: 'a surreal, high-contrast background depicting a melted gingerbread house in a dark, neon alley' },
+            { id: 'b11', name: 'Frozen Data Stream', prompt: 'a dark, highly detailed background showing frozen, crystalline data streams and broken servers in a sub-zero environment' },
         ],
     },
 ];
@@ -138,12 +172,16 @@ const withRetry = async (fn, maxRetries = 3) => {
             if (i === maxRetries - 1) throw error;
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
             await new Promise(resolve => setTimeout(resolve, delay));
-            // console.warn(`Retry attempt ${i + 1} failed. Retrying in ${delay / 1000}s...`);
+            console.warn(`Retry attempt ${i + 1} failed. Retrying in ${delay / 1000}s...`);
         }
     }
+    throw new Error("Maximum retries reached."); 
 };
 
 const App = () => {
+    // UPDATED System instruction to STRICTLY enforce style and safety constraints
+    const SYSTEM_INSTRUCTION = "You are an NFT image editor specialized in the **LeGods Cyborg Illustration Style** (high-contrast, bold, graphic, cyberpunk aesthetic). Your task is to edit the input image based on the user's instructions while strictly maintaining this style. You MUST refuse to process or output any image that depicts **real people**, **realistic photos**, **purely non-human characters** (e.g., animals, monsters, inanimate objects, except for the allowed cyborg figures), or anything outside of this specific style. IMPORTANT SAFETY RULE: You must NEVER generate **explicit, sexual, or nude content**. Ensure all figures are appropriately covered and adhere to strict safety standards, regardless of the user's input prompt. If the input image does not match the LeGods Cyborg Illustration Style, state that you can only edit LeGods NFT characters, and do not generate an image.";
+
     // --- State Management ---
     const [db, setDb] = useState(null);
     const [auth, setAuth] = useState(null);
@@ -152,58 +190,95 @@ const App = () => {
 
     const [inputImageBase64, setInputImageBase64] = useState(null);
     const [generatedImageUrl, setGeneratedImageUrl] = useState(null);
-    const [selectedItems, setSelectedItems] = useState({
-        headwear: CLOTHING_OPTIONS.find(c => c.key === 'headwear').items[0],
-        jacket: CLOTHING_OPTIONS.find(c => c.key === 'jacket').items[0],
-        chain: CLOTHING_OPTIONS.find(c => c.key === 'chain').items[0],
-        background: CLOTHING_OPTIONS.find(c => c.key === 'background').items[0],
+    
+    // Default selectedItems initialization
+    const [selectedItems, setSelectedItems] = useState(() => {
+        const initialSelections = {};
+        CLOTHING_OPTIONS.forEach(category => {
+            const defaultItem = category.items.find(i => i.prompt === '') || category.items[0]; 
+            initialSelections[category.key] = defaultItem;
+        });
+        return initialSelections;
     });
+    
     const [loading, setLoading] = useState(false);
-    const [error, setError(null);
+    const [error, setError] = useState(null);
 
     // --- Firebase Initialization and Auth ---
     useEffect(() => {
-        try {
-            const app = initializeApp(firebaseConfig);
-            const firestoreDb = getFirestore(app);
-            const firebaseAuth = getAuth(app);
+        let isMounted = true;
+        
+        const initializeFirebase = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.warn("Firebase config is empty. Proceeding without firestore/auth.");
+                    if(isMounted) setIsAuthReady(true);
+                    return;
+                }
+                
+                const app = initializeApp(firebaseConfig);
+                const firestoreDb = getFirestore(app);
+                const firebaseAuth = getAuth(app);
 
-            setDb(firestoreDb);
-            setAuth(firebaseAuth);
+                if(isMounted) {
+                    setDb(firestoreDb);
+                    setAuth(firebaseAuth);
+                }
 
-            const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                    } catch (e) {
-                        console.error("Error signing in with custom token, falling back to anonymous:", e);
+                const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+                    if (!isMounted) return;
+
+                    if (user) {
+                        setUserId(user.uid);
+                    } else if (initialAuthToken) {
+                        try {
+                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                        } catch (e) {
+                            console.error("Error signing in with custom token, falling back to anonymous:", e);
+                            await signInAnonymously(firebaseAuth);
+                        }
+                    } else {
                         await signInAnonymously(firebaseAuth);
                     }
-                } else {
-                    await signInAnonymously(firebaseAuth);
+                    setIsAuthReady(true);
+                });
+
+                // Clean up the auth listener
+                return () => {
+                    unsubscribe();
+                };
+
+            } catch (e) {
+                console.error("Failed to initialize Firebase:", e);
+                if(isMounted) {
+                    setError("Failed to initialize the application services.");
+                    setIsAuthReady(true); // Still mark as ready even if failed
                 }
-                setIsAuthReady(true);
-            });
+            }
+        };
 
-            return () => unsubscribe();
+        initializeFirebase();
 
-        } catch (e) {
-            console.error("Failed to initialize Firebase:", e);
-            setError("Failed to initialize the application services.");
-        }
-    }, []);
+        // Cleanup function for unmounting
+        return () => {
+            isMounted = false;
+        };
+    }, []); // Run only once on mount
 
     // Handler for selecting/deselecting an item
     const handleItemSelection = (categoryKey, item) => {
+        setError(null);
         setGeneratedImageUrl(null); // Clear previous output on new selection
         setSelectedItems(prev => {
+            const categoryItems = CLOTHING_OPTIONS.find(c => c.key === categoryKey).items;
+            const keepOriginalItem = categoryItems.find(i => i.prompt === '') || categoryItems[0];
+            
+            // If the user clicks the currently selected item again, return to the 'Keep Original' state
             if (prev[categoryKey] && prev[categoryKey].id === item.id) {
-                // Deselect if already selected
-                const newState = { ...prev };
-                delete newState[categoryKey];
-                return newState;
+                 return {
+                    ...prev,
+                    [categoryKey]: keepOriginalItem,
+                };
             } else {
                 // Select new item in category
                 return {
@@ -223,7 +298,9 @@ const App = () => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const dataUrl = reader.result;
-                setInputImageBase64(dataUrl);
+                // Prepend the mime type if it was somehow missing (though FileReader should include it)
+                const safeDataUrl = dataUrl.startsWith('data:image') ? dataUrl : `data:${file.type};base64,${dataUrl.split(',')[1]}`;
+                setInputImageBase64(safeDataUrl);
             };
             reader.readAsDataURL(file);
         }
@@ -237,26 +314,27 @@ const App = () => {
             return;
         }
 
+        // Filter out items where prompt is an empty string (i.e., 'Keep Original')
         const selectedDescriptions = Object.values(selectedItems)
             .map(item => item.prompt)
-            .filter(Boolean);
+            .filter(prompt => prompt && prompt.length > 0);
 
         if (selectedDescriptions.length === 0) {
-            setError("Please select at least one item of clothing/accessory.");
+            setError("Please select at least one item of clothing/accessory or a background change.");
             return;
         }
 
         // Construct the final prompt, emphasizing the style match
         const descriptionList = selectedDescriptions.join(' and ');
-        const finalPrompt = `Change the person in the image to have the following characteristics, ensuring the new items match the high-contrast, bold, graphic, and cyberpunk illustration style of the original NFT art: ${descriptionList}. Maintain the pose, facial expression, and general lighting.`;
+        const finalPrompt = `Change the person in the image to have the following characteristics: ${descriptionList}. Maintain the pose, facial expression, and general lighting.`;
 
         setLoading(true);
         setError(null);
         
         // 1. Extract raw base64 data and mime type from the data URL
         const parts = inputImageBase64.match(/^data:(.+?);base64,(.+)$/);
-        if (!parts) {
-            setError("Invalid image file format.");
+        if (!parts || parts.length < 3) {
+            setError("Invalid image file format during processing.");
             setLoading(false);
             return;
         }
@@ -282,6 +360,10 @@ const App = () => {
                     ]
                 }
             ],
+            // Add the system instruction to enforce the style and content constraint
+            systemInstruction: {
+                parts: [{ text: SYSTEM_INSTRUCTION }]
+            },
         };
         
         try {
@@ -301,13 +383,18 @@ const App = () => {
 
             const result = await withRetry(fetchFn);
             
-            const base64Image = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+            const candidate = result.candidates?.[0];
+            const base64Image = candidate?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+            const refusalText = candidate?.content?.parts?.[0]?.text;
 
             if (base64Image) {
-                // Format the output as a data URL for display
+                // Success: Format the output as a data URL for display
                 setGeneratedImageUrl(`data:image/png;base64,${base64Image}`);
+            } else if (refusalText) {
+                // Refusal: Display the model's textual refusal message
+                setError(`Style Enforcement: ${refusalText}`);
             } else {
-                setError("AI did not return an image. Please try a different combination.");
+                setError("AI did not return an image. This usually happens if the input image is not a stylized character (e.g., a photo).");
             }
         } catch (e) {
             console.error("Image generation error:", e);
@@ -315,7 +402,7 @@ const App = () => {
         } finally {
             setLoading(false);
         }
-    }, [inputImageBase64, selectedItems]);
+    }, [inputImageBase64, selectedItems, SYSTEM_INSTRUCTION]);
 
     // --- Component UI ---
 
@@ -324,7 +411,9 @@ const App = () => {
     const isEditing = generatedImageUrl && !loading;
     const generateButtonEnabled = isImageUploaded && !loading;
 
+    // Use React.Fragment for top-level component stability
     return (
+        <React.Fragment>
         <div className="min-h-screen bg-gray-900 p-4 sm:p-6 font-inter antialiased text-white">
             {/* Header */}
             <header className="mb-8 text-center">
@@ -333,11 +422,15 @@ const App = () => {
                     <span>LeGods Style Generator</span>
                 </h1>
                 <p className="text-gray-400 mt-1 text-sm sm:text-base">
-                    Mix and match accessories and clothing to customize your NFT avatar.
+                    Mix and match accessories and clothing to customize your NFT avatar. **Only works with LeGods Cyborg Illustration style inputs.**
                 </p>
-                <p className="text-xs text-gray-600 mt-2">
-                    Current App ID: **{appId}** | User ID: **{userId || '...'}**
-                </p>
+                {isAuthReady ? (
+                    <p className="text-xs text-gray-600 mt-2">
+                        Current App ID: **{appId}** | User ID: **{userId || 'Loading...'}**
+                    </p>
+                ) : (
+                    <p className="text-xs text-indigo-400 mt-2">Connecting to services...</p>
+                )}
             </header>
 
             <div className="max-w-6xl mx-auto bg-gray-800 p-6 rounded-2xl shadow-2xl">
@@ -347,7 +440,7 @@ const App = () => {
                     <div className="flex flex-col space-y-6 lg:order-1">
                         <h2 className="text-xl font-semibold text-yellow-400 flex items-center">
                             <Edit className="h-5 w-5 mr-2" />
-                            1. Select Your Traits
+                            1. Select Your Traits (All include **LeGods** logo)
                         </h2>
 
                         {CLOTHING_OPTIONS.map((category) => (
@@ -396,9 +489,9 @@ const App = () => {
                                 alt="LeGods Style Editor Preview"
                                 className="w-full h-full object-contain transition-opacity duration-300"
                                 onError={(e) => { 
-                                    // If the CDN path fails, fall back to simple black background
+                                    // If the user's uploaded image fails (e.g., deleted), fall back to placeholder
                                     e.target.onerror = null; 
-                                    e.target.src = 'https://placehold.co/400x500/000000/ffffff?text=Upload+Base+Image';
+                                    e.target.src = DEFAULT_IMAGE_URL;
                                 }}
                             />
                         </div>
@@ -436,13 +529,14 @@ const App = () => {
                         )}
                         {!isImageUploaded && (
                             <p className="text-center text-sm text-yellow-300 mt-3 p-2 border border-dashed border-yellow-600 rounded-lg w-full max-w-sm sm:max-w-md">
-                                **ACTION REQUIRED:** You must upload the base `image.png` file to enable the generation button.
+                                **ACTION REQUIRED:** Please upload a **cartoon/NFT style** base image to begin editing.
                             </p>
                         )}
                     </div>
                 </div>
             </div>
         </div>
+        </React.Fragment>
     );
 };
 
